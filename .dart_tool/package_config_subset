@@ -1,3 +1,7 @@
+flutter_webrtc
+3.3
+file:///home/codespace/.pub-cache/git/flutter-webrtc-978849b90adfaa6d52381c82cf1fbd74ccf5731b/
+file:///home/codespace/.pub-cache/git/flutter-webrtc-978849b90adfaa6d52381c82cf1fbd74ccf5731b/lib/
 async
 2.18
 file:///home/codespace/.pub-cache/hosted/pub.dev/async-2.11.0/
@@ -42,10 +46,6 @@ flutter_lints
 3.5
 file:///home/codespace/.pub-cache/hosted/pub.dev/flutter_lints-5.0.0/
 file:///home/codespace/.pub-cache/hosted/pub.dev/flutter_lints-5.0.0/lib/
-flutter_webrtc
-3.3
-file:///home/codespace/.pub-cache/hosted/pub.dev/flutter_webrtc-1.4.1/
-file:///home/codespace/.pub-cache/hosted/pub.dev/flutter_webrtc-1.4.1/lib/
 http
 3.4
 file:///home/codespace/.pub-cache/hosted/pub.dev/http-1.6.0/

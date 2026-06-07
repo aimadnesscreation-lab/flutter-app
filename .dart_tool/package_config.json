@@ -87,7 +87,7 @@
     },
     {
       "name": "flutter_webrtc",
-      "rootUri": "file:///home/codespace/.pub-cache/hosted/pub.dev/flutter_webrtc-1.4.1",
+      "rootUri": "file:///home/codespace/.pub-cache/git/flutter-webrtc-978849b90adfaa6d52381c82cf1fbd74ccf5731b/",
       "packageUri": "lib/",
       "languageVersion": "3.3"
     },
@@ -380,7 +380,7 @@
       "languageVersion": "3.2"
     }
   ],
-  "generated": "2026-06-07T22:03:56.820086Z",
+  "generated": "2026-06-07T22:23:51.913548Z",
   "generator": "pub",
   "generatorVersion": "3.6.2",
   "flutterRoot": "file:///workspaces/flutter-sdk",

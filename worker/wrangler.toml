@@ -1,0 +1,19 @@
+name = "together-backend"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Add a secure JWT Secret
+JWT_SECRET = "super_private_together_key_secret_2026"
+
+[[kv_namespaces]]
+binding = "TOGETHER_KV"
+id = "TOGETHER_MESSAGES_KV_ID_REPLACE_ME"
+
+[[durable_objects.bindings]]
+name = "TOGETHER_SESSION"
+class_name = "TogetherSessionManager"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TogetherSessionManager"]

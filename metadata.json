@@ -1,0 +1,11 @@
+{
+  "name": "Together",
+  "description": "A minimalist, private one-to-one communication app linking two dedicated partners with real-time text chat, audio, and video calling.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -35,6 +35,68 @@ class WebRTCService with ChangeNotifier {
     remoteRenderer.dispose();
   }
 
+  /// Builds media constraints based on whether audio-only or video call.
+  Map<String, dynamic> _getMediaConstraints() {
+    return {
+      'audio': true,
+      'video': isAudioOnly
+          ? false
+          : {
+              'mandatory': {
+                'minWidth': '640',
+                'minHeight': '480',
+                'minFrameRate': '30',
+              },
+              'facingMode': 'user',
+              'optional': [],
+            },
+    };
+  }
+
+  /// Returns the default ICE server configuration with Google STUN servers.
+  Map<String, dynamic> _getIceConfig() {
+    return {
+      'iceServers': [
+        {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
+      ],
+    };
+  }
+
+  /// Shared setup: gets user media, creates the peer connection, adds tracks,
+  /// and wires up ICE candidate / track event handlers.
+  Future<void> _initializePeerConnection() async {
+    final mediaConstraints = _getMediaConstraints();
+    _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    localRenderer.srcObject = _localStream;
+
+    final config = _getIceConfig();
+    _peerConnection = await createPeerConnection(config);
+
+    _localStream!.getTracks().forEach((track) {
+      _peerConnection!.addTrack(track, _localStream!);
+    });
+
+    _peerConnection!.onIceCandidate = (candidate) {
+      _wsService.sendSignal('candidate', {
+        'candidate': candidate.candidate,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      });
+    };
+
+    _peerConnection!.onTrack = (event) {
+      if (event.streams.isNotEmpty) {
+        _remoteStream = event.streams[0];
+        remoteRenderer.srcObject = _remoteStream;
+        state = CallState.active;
+        notifyListeners();
+      }
+    };
+  }
+
+  /// Initiates an outgoing call by acquiring media, creating an offer,
+  /// and sending it via the signaling channel.
   Future<void> startCall({required bool audioOnly}) async {
     if (state != CallState.idle) return;
     
@@ -43,56 +105,9 @@ class WebRTCService with ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Get media streams
-      final mediaConstraints = {
-        'audio': true,
-        'video': isAudioOnly ? false : {
-          'mandatory': {
-            'minWidth': '640',
-            'minHeight': '480',
-            'minFrameRate': '30',
-          },
-          'facingMode': 'user',
-          'optional': [],
-        }
-      };
+      await _initializePeerConnection();
 
-      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      localRenderer.srcObject = _localStream;
-
-      // 2. Build PeerConnection
-      final config = {
-        'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'},
-          {'urls': 'stun:stun1.l.google.com:19302'},
-        ]
-      };
-
-      _peerConnection = await createPeerConnection(config);
-
-      // Track stream
-      _localStream!.getTracks().forEach((track) {
-        _peerConnection!.addTrack(track, _localStream!);
-      });
-
-      _peerConnection!.onIceCandidate = (candidate) {
-        _wsService.sendSignal('candidate', {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        });
-      };
-
-      _peerConnection!.onTrack = (event) {
-        if (event.streams.isNotEmpty) {
-          _remoteStream = event.streams[0];
-          remoteRenderer.srcObject = _remoteStream;
-          state = CallState.active;
-          notifyListeners();
-        }
-      };
-
-      // Create offer
+      // Create and send offer
       final offer = await _peerConnection!.createOffer();
       await _peerConnection!.setLocalDescription(offer);
 
@@ -100,64 +115,22 @@ class WebRTCService with ChangeNotifier {
         'sdp': offer.sdp,
         'type': offer.type,
       });
-
     } catch (e) {
       endCall();
     }
   }
 
+  /// Handles an incoming offer from the remote peer: acquires media,
+  /// sets the remote description, creates an answer, and sends it back.
   Future<void> handleIncomingOffer(Map<String, dynamic> signalPayload, bool audioOnly) async {
     state = CallState.connecting;
     isAudioOnly = audioOnly;
     notifyListeners();
 
     try {
-      final mediaConstraints = {
-        'audio': true,
-        'video': isAudioOnly ? false : {
-          'mandatory': {
-            'minWidth': '640',
-            'minHeight': '480',
-            'minFrameRate': '30',
-          },
-          'facingMode': 'user',
-          'optional': [],
-        }
-      };
+      await _initializePeerConnection();
 
-      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      localRenderer.srcObject = _localStream;
-
-      final config = {
-        'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'},
-          {'urls': 'stun:stun1.l.google.com:19302'},
-        ]
-      };
-
-      _peerConnection = await createPeerConnection(config);
-
-      _localStream!.getTracks().forEach((track) {
-        _peerConnection!.addTrack(track, _localStream!);
-      });
-
-      _peerConnection!.onIceCandidate = (candidate) {
-        _wsService.sendSignal('candidate', {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        });
-      };
-
-      _peerConnection!.onTrack = (event) {
-        if (event.streams.isNotEmpty) {
-          _remoteStream = event.streams[0];
-          remoteRenderer.srcObject = _remoteStream;
-          state = CallState.active;
-          notifyListeners();
-        }
-      };
-
+      // Set remote offer and create answer
       final offer = RTCSessionDescription(signalPayload['sdp'], signalPayload['type']);
       await _peerConnection!.setRemoteDescription(offer);
 
@@ -168,7 +141,6 @@ class WebRTCService with ChangeNotifier {
         'sdp': answer.sdp,
         'type': answer.type,
       });
-
     } catch (e) {
       endCall();
     }
@@ -182,11 +154,8 @@ class WebRTCService with ChangeNotifier {
 
     switch (signalType) {
       case 'offer':
-        // Prompt incoming call UI or automatically handle depending on layout
-        // For standard Webrtc workflow, transition to ringing
         state = CallState.ringing;
         notifyListeners();
-        // In actual UI, user decides to answer, triggering handleIncomingOffer
         break;
 
       case 'answer':
@@ -255,7 +224,6 @@ class WebRTCService with ChangeNotifier {
     isCameraOff = false;
     notifyListeners();
 
-    // Broadcast call ending signal
     _wsService.sendSignal('endCall', {});
   }
 }

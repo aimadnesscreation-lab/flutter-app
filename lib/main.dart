@@ -38,7 +38,6 @@ class TogetherApp extends StatelessWidget {
             primary: Colors.white,
             secondary: Colors.white,
             surface: Colors.black,
-            background: Colors.black,
           ),
         ),
         home: const SplashScreen(),

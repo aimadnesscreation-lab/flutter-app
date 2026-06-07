@@ -25,8 +25,11 @@ export default {
     }
 
     try {
+      // Normalize path: accept both /api/... and /... routes
+      const path = url.pathname === '/ws' ? '/ws' : url.pathname.replace(/^\/api/, '') || '/';
+
       // 1. Auth Endpoint
-      if (url.pathname === "/login" && request.method === "POST") {
+      if (path === "/login" && request.method === "POST") {
         const { username, password } = await request.json<any>();
 
         // Pre-defined private logins
@@ -119,7 +122,7 @@ export default {
       }
 
       // 4. Save Message history
-      if (url.pathname === "/send-message" && request.method === "POST") {
+      if (path === "/send-message" && request.method === "POST") {
         const payload = await request.json<any>();
         const msgId = payload.id || Math.random().toString(36).substr(2, 9);
         const messageObj = {
@@ -153,7 +156,7 @@ export default {
       }
 
       // 5. Query Message history
-      if (url.pathname === "/messages" && request.method === "GET") {
+      if (path === "/messages" && request.method === "GET") {
         // List from KV with prefix 'messages:'
         const list = await env.TOGETHER_KV.list({ prefix: "messages:" });
         const messages = [];
@@ -174,7 +177,7 @@ export default {
       }
 
       // 6. Clear chat history
-      if (url.pathname === "/messages/clear" && request.method === "DELETE") {
+      if (path === "/messages/clear" && request.method === "DELETE") {
         const list = await env.TOGETHER_KV.list({ prefix: "messages:" });
         for (const key of list.keys) {
           await env.TOGETHER_KV.delete(key.name);

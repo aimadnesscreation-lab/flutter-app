@@ -35,6 +35,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch flutter_webrtc for Flutter 3.27+ compatibility
+        run: |
+          FILE=$(find /home/runner/.pub-cache/git/flutter-webrtc-* -name "SurfaceTextureRenderer.java" | head -1)
+          if [ -z "$FILE" ]; then
+            echo "Error: SurfaceTextureRenderer.java not found"
+            exit 1
+          fi
+          python3 scripts/patch_webrtc.py "$FILE"
+
       - name: Build release APK
         run: flutter build apk --release
 

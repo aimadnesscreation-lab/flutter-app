@@ -6,6 +6,10 @@ compatibility_date = "2026-01-01"
 # Add a secure JWT Secret
 JWT_SECRET = "super_private_together_key_secret_2026"
 
+# User credentials as JSON array
+# Format: [{"username":"...","password":"..."}]
+USERS = '[{"username":"zain","password":"together_zain_2026"},{"username":"gf","password":"together_gf_2026"}]'
+
 [[kv_namespaces]]
 binding = "TOGETHER_KV"
 id = "a216c93ec7af47b2a27feba002164706"

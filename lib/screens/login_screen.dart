@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/credentials.dart';
 import '../utils/constants.dart';
 import 'home_screen.dart';
 
@@ -29,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (username != 'zain' && username != 'gf') {
+    if (!AppCredentials.allowedUsernames.contains(username)) {
       setState(() {
         _errorMessage = "Access restricted to designated partners";
       });

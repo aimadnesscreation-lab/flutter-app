@@ -27,11 +27,21 @@ import {
   Info
 } from "lucide-react";
 
-// Setup Mock credentials & versions
-const passwords: Record<string, string> = {
-  zain: "together_zain_2026",
-  gf: "together_gf_2026"
-};
+// Read credentials from Vite env var (loaded from .env or injected at build time)
+// Format: JSON array of { username, password } objects
+const rawUsers = import.meta.env.VITE_USERS ||
+  '[{"username":"zain","password":"together_zain_2026"},{"username":"gf","password":"together_gf_2026"}]';
+const USERS: Array<{ username: string; password: string }> = (() => {
+  try { return JSON.parse(rawUsers); }
+  catch { return []; }
+})();
+
+const passwords: Record<string, string> = {};
+for (const u of USERS) { passwords[u.username] = u.password; }
+
+function getPartnerName(currentUser: string): string {
+  return USERS.find((u) => u.username !== currentUser)?.username || "partner";
+}
 
 interface Message {
   id: string;
@@ -178,7 +188,9 @@ export default function App() {
 
       {/* Persistent Footer */}
       <footer className="border-t border-neutral-850 py-4 px-8 bg-black/30 text-center text-xs text-neutral-500 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <p>Preconfigured users: <span className="text-neutral-400 font-mono bg-neutral-900 border border-neutral-850 px-1 py-0.5 rounded">zain</span> & <span className="text-neutral-400 font-mono bg-neutral-900 border border-neutral-850 px-1 py-0.5 rounded">gf</span></p>
+        <p>Preconfigured users: {USERS.map((u, i) => (
+          <span key={u.username} className="text-neutral-400 font-mono bg-neutral-900 border border-neutral-850 px-1 py-0.5 rounded">{u.username}</span>
+        )).reduce((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`sep-${i}`} className="text-neutral-600 mx-1">&</span>, el], [] as React.ReactNode[])}</p>
         <p>Together private secure workspace © 2026</p>
       </footer>
     </div>
@@ -409,13 +421,9 @@ function PhoneSimulator({ username, partnerName, messages, setMessages, onRefres
           <form onSubmit={handleLoginSubmit} className="mt-8 flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-neutral-500 text-[11px] uppercase tracking-wider">Default password</label>
-              <input
-                type="text"
-                readOnly
-                value={passwords[username]}
-                className="w-full bg-neutral-950/80 border border-neutral-900 p-2.5 rounded-lg text-xs font-mono text-neutral-400 select-all cursor-copy"
-                title="Click to copy, then enter in input space below"
-              />
+              <div className="w-full bg-neutral-950/80 border border-neutral-900 p-2.5 rounded-lg text-xs font-mono text-neutral-400 select-all">
+              {passwords[username] || "No password configured"}
+            </div>
             </div>
 
             <div className="flex flex-col gap-1.5">

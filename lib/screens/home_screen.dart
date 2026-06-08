@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../config/credentials.dart';
 import '../services/websocket_service.dart';
 import '../services/webrtc_service.dart';
 import '../utils/constants.dart';
@@ -98,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.username == 'zain' ? 'GF' : 'Zain',
+                      AppCredentials.getPartnerDisplayName(widget.username),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,

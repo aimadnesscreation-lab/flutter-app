@@ -74,81 +74,50 @@ The Flutter APK is built separately and connects to the same Cloudflare backend.
 
 ## Changing Usernames & Passwords
 
-There are **three places** where usernames and passwords are defined. You must update all of them:
+Credentials are now centralized — you only need to change them in **one file per platform**:
 
-### 1. Cloudflare Worker (`worker/src/index.ts`)
+### 1. Cloudflare Worker Backend (`worker/wrangler.toml`)
 
-This is the live production backend that handles authentication. Find the `USERS` object:
+Edit the `USERS` JSON var in the `[vars]` section:
 
-```typescript
-// Lines ~38-41
-const USERS: Record<string, string> = {
-  zain: "together_zain_2026",   // ← Change username and/or password
-  gf: "together_gf_2026",       // ← Change username and/or password
-};
+```toml
+[vars]
+JWT_SECRET = "your_secret_key_here"
+USERS = '[{"username":"zain","password":"new_password"},{"username":"gf","password":"new_password"}]'
 ```
 
-Change the keys (usernames) and/or values (passwords). Then redeploy:
+Then redeploy:
 
 ```bash
 cd worker
 npx wrangler deploy
 ```
 
-Also update the `JWT_SECRET` in `worker/wrangler.toml` for production security:
+### 2. Flutter Mobile App (`lib/config/credentials.dart`)
 
-```toml
-[vars]
-JWT_SECRET = "your_new_secret_key_here"
-```
-
-### 2. Durable Object (`worker/src/durable-object.ts`)
-
-The DO validates usernames on WebSocket connection. Find the username check:
-
-```typescript
-// Lines ~28-30
-if (!username || (username !== "zain" && username !== "gf")) {
-  return new Response("Invalid partner username", { status: 400 });
-}
-```
-
-Update the hardcoded usernames to match the new ones from step 1, then redeploy.
-
-The partner determination logic also references these names:
-
-```typescript
-const partner = username === "zain" ? "gf" : "zain";
-```
-
-Update this as well.
-
-### 3. Flutter App (`lib/utils/constants.dart`)
-
-The mobile app has its own copy of the allowed users list:
+Edit the `users` list:
 
 ```dart
-static const List<String> allowedUsers = ["zain", "gf"];
+static const List<Map<String, String>> users = [
+  {'username': 'zain', 'password': 'new_password', 'displayName': 'Zain'},
+  {'username': 'gf', 'password': 'new_password', 'displayName': 'GF'},
+];
 ```
 
-Update the usernames here and rebuild the APK:
+Then rebuild:
 
 ```bash
 flutter build apk --release
 ```
 
-### 4. Local Express Server (`server.ts`)
+### 3. Local Dev Server (`.env` file)
 
-If you're running the local dev server, update the `VALID_USERS` object:
+Edit the `USERS` variable:
 
-```typescript
-const VALID_USERS: Record<string, string> = {
-  zain: "together_zain_2026",
-  gf: "together_gf_2026"
-};
 ```
-
----
+USERS=[{"username":"zain","password":"new_password"},{"username":"gf","password":"new_password"}]
+VITE_USERS=[{"username":"zain","password":"new_password"},{"username":"gf","password":"new_password"}]
+```
 
 ### After Changing Credentials
 

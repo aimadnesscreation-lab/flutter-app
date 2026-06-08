@@ -32,13 +32,13 @@ export default {
       if (path === "/login" && request.method === "POST") {
         const { username, password } = await request.json<any>();
 
-        // Pre-defined private logins
-        const USERS: Record<string, string> = {
-          zain: "together_zain_2026", // Pre-defined private passwords
-          gf: "together_gf_2026",
-        };
+        // Read user credentials from env var (JSON array)
+        const users = parseUsersEnv(env.USERS);
+        const matchedUser = users.find(
+          (u: { username: string; password: string }) => u.username === username && u.password === password
+        );
 
-        if (USERS[username] && USERS[username] === password) {
+        if (matchedUser) {
           // Sign a simple JWT or a secure auth token
           const header = b64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
           const payload = b64Url(
@@ -66,7 +66,7 @@ export default {
               success: true,
               token,
               username,
-              partnerName: username === "zain" ? "gf" : "zain",
+              partnerName: getPartnerName(users, username),
             }),
             {
               status: 200,
@@ -107,6 +107,7 @@ export default {
         const doStub = env.TOGETHER_SESSION.get(id);
 
         // Forward the fetch containing WS upgrade
+        // The DO reads USERS from env directly (passed via constructor)
         const newUrl = new URL(request.url);
         newUrl.searchParams.set("username", username);
         const wsRequest = new Request(newUrl.toString(), request);
@@ -200,6 +201,30 @@ export default {
     }
   },
 };
+
+// --- Helpers ---
+
+/** Parse the USERS env var JSON array, falling back to defaults. */
+function parseUsersEnv(raw: string | undefined): Array<{ username: string; password: string }> {
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error("Failed to parse USERS env var, using defaults", e);
+    }
+  }
+  // Fallback defaults
+  return [
+    { username: "zain", password: "together_zain_2026" },
+    { username: "gf", password: "together_gf_2026" },
+  ];
+}
+
+/** Given the current username, return the partner's username. */
+function getPartnerName(users: Array<{ username: string }>, currentUser: string): string {
+  const partner = users.find((u) => u.username !== currentUser);
+  return partner?.username || users[0]?.username || "partner";
+}
 
 // --- Helpers for JWT validation on Cloudflare without external npm dependencies ---
 function b64Url(str: string): string {

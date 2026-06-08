@@ -8,11 +8,21 @@ export class TogetherSessionManager {
   state: any;
   env: any;
   connections: Map<string, SessionConnection>;
+  private _users: Array<{ username: string; password: string }> = [];
 
   constructor(state: any, env: any) {
     this.state = state;
     this.env = env;
     this.connections = new Map();
+    this._users = parseUsers(env.USERS);
+  }
+
+  private get validUsernames(): string[] {
+    return this._users.map((u) => u.username);
+  }
+
+  private getPartner(currentUser: string): string | undefined {
+    return this._users.find((u) => u.username !== currentUser)?.username;
   }
 
   async fetch(request: Request) {
@@ -24,7 +34,7 @@ export class TogetherSessionManager {
     }
 
     const username = url.searchParams.get("username");
-    if (!username || (username !== "zain" && username !== "gf")) {
+    if (!username || !this.validUsernames.includes(username)) {
       return new Response("Invalid partner username", { status: 400 });
     }
 
@@ -123,10 +133,10 @@ export class TogetherSessionManager {
     });
 
     // Send current presence of the partner to this newly connected user
-    const partner = username === "zain" ? "gf" : "zain";
-    const isPartnerOnline = [...this.connections.values()].some(
-      (c) => c.username === partner
-    );
+    const partner = this.getPartner(username);
+    const isPartnerOnline = partner
+      ? [...this.connections.values()].some((c) => c.username === partner)
+      : false;
     ws.send(
       JSON.stringify({
         type: "init",
@@ -148,4 +158,19 @@ export class TogetherSessionManager {
       }
     }
   }
+}
+
+/** Parse the USERS env var JSON array, falling back to defaults. */
+function parseUsers(raw: string | undefined): Array<{ username: string; password: string }> {
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error("Failed to parse USERS env in DO, using defaults", e);
+    }
+  }
+  return [
+    { username: "zain", password: "together_zain_2026" },
+    { username: "gf", password: "together_gf_2026" },
+  ];
 }

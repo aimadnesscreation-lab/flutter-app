@@ -3,10 +3,33 @@ import path from "path";
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer as createViteServer } from "vite";
+import dotenv from "dotenv";
+dotenv.config();
+
+// Load user credentials from environment (USERS JSON array)
+const rawUsers = process.env.USERS ||
+  '[{"username":"zain","password":"together_zain_2026"},{"username":"gf","password":"together_gf_2026"}]';
+const USERS: Array<{ username: string; password: string }> = (() => {
+  try {
+    return JSON.parse(rawUsers);
+  } catch {
+    return [
+      { username: "zain", password: "together_zain_2026" },
+      { username: "gf", password: "together_gf_2026" },
+    ];
+  }
+})();
+
+const VALID_USERNAMES = USERS.map((u) => u.username);
+type Username = (typeof VALID_USERNAMES)[number];
 
 interface UserConnection {
   ws: WebSocket;
-  username: "zain" | "gf";
+  username: Username;
+}
+
+function getPartnerName(currentUser: string): string {
+  return USERS.find((u) => u.username !== currentUser)?.username || "partner";
 }
 
 async function startServer() {
@@ -20,21 +43,21 @@ async function startServer() {
   // In-memory message history for direct mock of KV/DO persistence
   let messageHistory: Array<{
     id: string;
-    sender: "zain" | "gf";
+    sender: Username;
     content: string;
     timestamp: number;
     status: string;
   }> = [
     {
       id: "init_1",
-      sender: "zain",
+      sender: VALID_USERNAMES[0] as Username,
       content: "Hey, setting up this together space for us! Clean and minimal.",
       timestamp: Date.now() - 3600000,
       status: "read"
     },
     {
       id: "init_2",
-      sender: "gf",
+      sender: VALID_USERNAMES[1] as Username,
       content: "Oh wow, I love how lightweight it feels. Completely private!",
       timestamp: Date.now() - 3500000,
       status: "read"
@@ -47,19 +70,16 @@ async function startServer() {
   // REST endpoints
   app.post("/api/login", (req, res) => {
     const { username, password } = req.body;
-    
-    // Strict authentication as configured
-    const VALID_USERS: Record<string, string> = {
-      zain: "together_zain_2026",
-      gf: "together_gf_2026"
-    };
 
-    if (VALID_USERS[username] && VALID_USERS[username] === password) {
+    // Validate against env-driven user credentials
+    const matchedUser = USERS.find((u) => u.username === username && u.password === password);
+
+    if (matchedUser) {
       return res.json({
         success: true,
         token: `mock_jwt_for_${username}_${Date.now()}`,
         username,
-        partnerName: username === "zain" ? "gf" : "zain"
+        partnerName: getPartnerName(username)
       });
     }
 
@@ -116,7 +136,8 @@ async function startServer() {
   // WebSocket connections handler
   wss.on("connection", (ws: WebSocket, request) => {
     const url = new URL(request.url || "", `http://${request.headers.host}`);
-    const username = (url.searchParams.get("username") as "zain" | "gf") || "zain";
+    const usernameParam = url.searchParams.get("username") || VALID_USERNAMES[0];
+    const username = VALID_USERNAMES.includes(usernameParam) ? (usernameParam as Username) : (VALID_USERNAMES[0] as Username);
 
     const connectionId = `${username}_${Math.random().toString(36).substr(2, 9)}`;
     activeConnections.set(connectionId, { ws, username });
@@ -192,8 +213,9 @@ async function startServer() {
     });
 
     // Provide immediate initial data
+    const partnerName = getPartnerName(username);
     const isPartnerOnline = Array.from(activeConnections.values()).some(
-      c => c.username === (username === "zain" ? "gf" : "zain")
+      c => c.username === partnerName
     );
     ws.send(JSON.stringify({
       type: "init",
@@ -215,6 +237,15 @@ async function startServer() {
       }
     });
   }
+
+  // API endpoint to expose user config (for the simulator UI)
+  app.get("/api/config", (req, res) => {
+    const safeUsers = USERS.map(({ username, password: _p }) => ({
+      username,
+      // Password is intentionally excluded for security; client logs in via /api/login
+    }));
+    res.json({ success: true, users: safeUsers });
+  });
 
   // Vite middleware for rendering the responsive dashboard in development
   if (process.env.NODE_ENV !== "production") {

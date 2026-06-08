@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../config/credentials.dart';
 import '../models/message.dart';
 import '../models/user.dart';
 import '../utils/constants.dart';
@@ -25,9 +26,10 @@ class WebSocketService with ChangeNotifier {
   Future<void> init(String username, String token) async {
     _currentUser = username;
     _token = token;
+    final partnerUsername = AppCredentials.getPartnerUsername(username);
     partner = PartnerUser(
-      username: username == 'zain' ? 'gf' : 'zain',
-      displayName: username == 'zain' ? 'GF' : 'Zain',
+      username: partnerUsername,
+      displayName: AppCredentials.getDisplayName(partnerUsername),
     );
     connect();
   }

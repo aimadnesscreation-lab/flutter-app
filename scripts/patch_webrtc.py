@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Patch flutter_webrtc's SurfaceTextureRenderer.java for Flutter 3.27+ compatibility.
 
-Flutter 3.27 added onSurfaceDestroyed() to the TextureRegistry.SurfaceProducer.Callback
-interface, but flutter_webrtc from git main hasn't implemented it yet. This patch
-adds the missing method.
+Flutter 3.27 renamed onSurfaceCleanup() to onSurfaceDestroyed() in the
+TextureRegistry.SurfaceProducer.Callback interface. This patch renames
+the method in flutter_webrtc's SurfaceTextureRenderer.java to match.
 
 Usage: python3 patch_webrtc.py <path-to-SurfaceTextureRenderer.java>
 """
@@ -16,30 +16,17 @@ def patch_file(path: str) -> bool:
     with open(path, 'r') as f:
         content = f.read()
 
-    # The anonymous Callback class in surfaceCreated() only has onSurfaceAvailable().
-    # We need to add onSurfaceDestroyed() after it.
-    old = '''              @Override
-              public void onSurfaceAvailable() {
-              }
-            }'''
-
-    new = '''              @Override
-              public void onSurfaceAvailable() {
-              }
-
-              @Override
-              public void onSurfaceDestroyed() {
-                surfaceDestroyed();
-              }
-            }'''
-
-    if old in content:
-        content = content.replace(old, new)
+    # Flutter 3.27 renamed onSurfaceCleanup -> onSurfaceDestroyed in the
+    # TextureRegistry.SurfaceProducer.Callback interface. Both methods
+    # have the same body (calling surfaceDestroyed()), so a simple rename is safe.
+    if "onSurfaceCleanup" in content:
+        content = content.replace("public void onSurfaceCleanup()", "public void onSurfaceDestroyed()")
         with open(path, 'w') as f:
             f.write(content)
+        print(f"Renamed onSurfaceCleanup -> onSurfaceDestroyed in {path}")
         return True
 
-    # Already patched or different version — that's fine
+    print("onSurfaceCleanup not found — file may already be patched")
     return False
 
 
@@ -53,10 +40,7 @@ def main():
         print(f"Error: file not found: {path}")
         sys.exit(1)
 
-    if patch_file(path):
-        print(f"Patched {path}")
-    else:
-        print("Pattern not found — file may already be patched or version differs")
+    patch_file(path)
 
 
 if __name__ == "__main__":

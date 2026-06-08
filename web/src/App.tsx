@@ -58,13 +58,29 @@ export default function App() {
 
   // --- Media & PeerConnection helpers ---
   const getMedia = async (audioOnly: boolean) => {
-    const constraints: MediaStreamConstraints = {
-      audio: true,
-      video: audioOnly ? false : { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
-    };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    localStreamRef.current = stream;
-    return stream;
+    try {
+      const constraints: MediaStreamConstraints = {
+        audio: true,
+        video: audioOnly ? false : { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+      return stream;
+    } catch (err) {
+      // If video failed (e.g. camera in use by another tab), fall back to audio-only
+      if (!audioOnly) {
+        console.warn("Video getUserMedia failed, falling back to audio-only:", err);
+        try {
+          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          localStreamRef.current = audioStream;
+          return audioStream;
+        } catch (err2) {
+          console.error("Audio getUserMedia also failed:", err2);
+          throw err2;
+        }
+      }
+      throw err;
+    }
   };
 
   const createPC = () => {
@@ -72,16 +88,35 @@ export default function App() {
     pcRef.current = pc;
 
     pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        socketRef.current?.send(JSON.stringify({
+      if (e.candidate && socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({
           type: "signal", signalType: "candidate", payload: e.candidate.toJSON(),
         }));
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      console.log("ICE state:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "disconnected" ||
+          pc.iceConnectionState === "failed" ||
+          pc.iceConnectionState === "closed") {
+        cleanupMedia();
+        setCallState("idle");
+        setMuted(false);
+        setCamOff(false);
+        setScreen("chat");
+        socketRef.current?.send(JSON.stringify({ type: "signal", signalType: "end", payload: {} }));
+      }
+    };
+
     pc.ontrack = (e) => {
+      console.log("Remote track received:", e.track.kind);
       remoteStreamRef.current = e.streams[0];
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
+      // If remote has no video but we expected video, downgrade to audio
+      if (!e.streams[0]?.getVideoTracks().length) {
+        setCallType("audio");
+      }
       setCallState("connected");
     };
 
@@ -127,29 +162,37 @@ export default function App() {
     } catch { /* offline fallback */ }
   }, [token]);
 
-  // --- WebSocket ---
+  // Keep ref up to date for WS closure to avoid stale closures
+  const partnerNameRef = useRef(partnerName);
+  partnerNameRef.current = partnerName;
+
+  // --- WebSocket (stable connection - only reconnect on token/username change) ---
   useEffect(() => {
-    if (screen !== "chat" && screen !== "calling" && screen !== "settings") return;
     if (!token || !username) return;
 
     const ws = new WebSocket(`${WS_URL}?token=${token}`);
     socketRef.current = ws;
 
     ws.onopen = () => setIsPartnerOnline(true);
-    ws.onclose = () => setIsPartnerOnline(false);
+    ws.onclose = () => {
+      setIsPartnerOnline(false);
+      socketRef.current = null;
+    };
 
     ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
+        const currentPartner = partnerNameRef.current;
+
         switch (data.type) {
           case "init":
             setIsPartnerOnline(data.partnerOnline);
             break;
           case "status":
-            if (data.sender === partnerName) setIsPartnerOnline(data.isOnline);
+            if (data.sender === currentPartner) setIsPartnerOnline(data.isOnline);
             break;
           case "typing":
-            if (data.sender === partnerName) setIsPartnerTyping(data.isTyping);
+            if (data.sender === currentPartner) setIsPartnerTyping(data.isTyping);
             break;
           case "message":
             setMessages((prev) => {
@@ -158,7 +201,7 @@ export default function App() {
             });
             break;
           case "signal":
-            if (data.sender !== partnerName) break;
+            if (data.sender !== currentPartner) break;
             const payload = data.payload || {};
 
             if (data.signalType === "offer") {
@@ -167,14 +210,24 @@ export default function App() {
               setCallState("ringing_in");
               setScreen("calling");
             } else if (data.signalType === "answer" && pcRef.current) {
-              await pcRef.current.setRemoteDescription(
-                new RTCSessionDescription({ sdp: payload.sdp, type: "answer" })
-              );
+              try {
+                await pcRef.current.setRemoteDescription(
+                  new RTCSessionDescription({ sdp: payload.sdp, type: "answer" })
+                );
+              } catch (e) {
+                console.error("setRemoteDescription failed:", e);
+              }
             } else if (data.signalType === "candidate" && pcRef.current) {
-              await pcRef.current.addIceCandidate(new RTCIceCandidate(payload));
+              try {
+                await pcRef.current.addIceCandidate(new RTCIceCandidate(payload));
+              } catch (e) {
+                console.error("addIceCandidate failed:", e);
+              }
             } else if (data.signalType === "end") {
               cleanupMedia();
               setCallState("idle");
+              setMuted(false);
+              setCamOff(false);
               setScreen("chat");
             }
             break;
@@ -182,11 +235,16 @@ export default function App() {
             setMessages([]);
             break;
         }
-      } catch {}
+      } catch (e) {
+        console.error("WS message error:", e);
+      }
     };
 
-    return () => ws.close();
-  }, [screen, token, username, partnerName]);
+    return () => {
+      ws.close();
+      socketRef.current = null;
+    };
+  }, [token, username]); // only reconnect when auth changes
 
   useEffect(() => {
     if (token) fetchMessages();
@@ -245,6 +303,10 @@ export default function App() {
       await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
       const stream = await getMedia(audioOnly);
+      // If no video tracks (fallback from camera conflict or audio-only), update callType
+      if (stream.getVideoTracks().length === 0) {
+        setCallType("audio");
+      }
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       const pc = createPC();
@@ -271,12 +333,17 @@ export default function App() {
     try {
       setMuted(false);
       setCamOff(false);
+      const isAudioOnly = callType === "audio";
 
       // screen is already "calling" from incoming offer handler
       // Wait for React to paint the video elements into the DOM
       await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
-      const stream = await getMedia(callType === "audio");
+      const stream = await getMedia(isAudioOnly);
+      // If no video tracks (fallback from camera conflict), update callType
+      if (stream.getVideoTracks().length === 0) {
+        setCallType("audio");
+      }
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       const pc = createPC();
@@ -299,6 +366,20 @@ export default function App() {
       setScreen("chat");
     }
   };
+
+  // Call timeout: auto-cancel ringing_out after 30s
+  useEffect(() => {
+    if (callState !== "ringing_out") return;
+    const t = setTimeout(() => {
+      socketRef.current?.send(JSON.stringify({ type: "signal", signalType: "end", payload: {} }));
+      cleanupMedia();
+      setCallState("idle");
+      setMuted(false);
+      setCamOff(false);
+      setScreen("chat");
+    }, 30000);
+    return () => clearTimeout(t);
+  }, [callState]);
 
   const endCall = () => {
     cleanupMedia();
@@ -453,13 +534,13 @@ export default function App() {
 
       {screen === "calling" && (
         <div className="flex-1 flex flex-col relative bg-black">
-          {/* Remote video (full screen) - always rendered so ref stays valid */}
+          {/* Remote video (full screen) - mirrored like local so both sides match */}
           <video ref={remoteVideoRef} autoPlay playsInline
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${callState === "connected" && !callType.includes("audio") ? "opacity-100" : "opacity-0 pointer-events-none"}`} />
+            className={`absolute inset-0 w-full h-full object-contain bg-black scale-x-[-1] transition-opacity duration-500 ${callState === "connected" && !callType.includes("audio") ? "opacity-100" : "opacity-0 pointer-events-none"}`} />
 
-          {/* Local video PIP - always rendered so ref stays valid */}
+          {/* Local video PIP (mirrored for natural self-view like a mirror) */}
           <div className={`absolute top-4 right-4 w-28 h-36 rounded-xl overflow-hidden border-2 border-neutral-700 z-10 bg-black shadow-lg transition-opacity duration-300 ${callState === "connected" && callType === "video" && !camOff ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
           </div>
 
           {/* Overlay content */}

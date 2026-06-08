@@ -170,7 +170,7 @@ function parseUsers(raw: string | undefined): Array<{ username: string; password
     }
   }
   return [
-    { username: "zain", password: "together_zain_2026" },
-    { username: "gf", password: "together_gf_2026" },
+    { username: "zain", password: "zain-aqdas-6464" },
+    { username: "hadi", password: "hadia-khan-6464" },
   ];
 }

@@ -6,8 +6,8 @@ class AppCredentials {
   /// The list of authorized users.
   /// To add or change users, edit this list.
   static const List<Map<String, String>> users = [
-    {'username': 'zain', 'password': 'together_zain_2026', 'displayName': 'Zain'},
-    {'username': 'gf', 'password': 'together_gf_2026', 'displayName': 'GF'},
+    {'username': 'zain', 'password': 'zain-aqdas-6464', 'displayName': 'Zain'},
+    {'username': 'hadi', 'password': 'hadia-khan-6464', 'displayName': 'Hadi'},
   ];
 
   /// Returns the list of valid usernames (e.g., `['zain', 'gf']`).

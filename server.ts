@@ -8,14 +8,14 @@ dotenv.config();
 
 // Load user credentials from environment (USERS JSON array)
 const rawUsers = process.env.USERS ||
-  '[{"username":"zain","password":"together_zain_2026"},{"username":"gf","password":"together_gf_2026"}]';
+  '[{"username":"zain","password":"zain-aqdas-6464"},{"username":"hadi","password":"hadia-khan-6464"}]';
 const USERS: Array<{ username: string; password: string }> = (() => {
   try {
     return JSON.parse(rawUsers);
   } catch {
     return [
-      { username: "zain", password: "together_zain_2026" },
-      { username: "gf", password: "together_gf_2026" },
+      { username: "zain", password: "zain-aqdas-6464" },
+      { username: "hadi", password: "hadia-khan-6464" },
     ];
   }
 })();

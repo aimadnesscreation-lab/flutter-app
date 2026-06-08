@@ -14,6 +14,18 @@ const ICE_SERVERS = {
   ],
 };
 
+// Read allowed usernames from Vite env var (loaded from web/.env)
+// Fallback ensures existing deployments still work.
+const rawUsers = import.meta.env.VITE_USERS ||
+  '[{"username":"zain"},{"username":"gf"}]';
+const ALLOWED_USERS: string[] = (() => {
+  try {
+    return JSON.parse(rawUsers).map((u: any) => u.username);
+  } catch {
+    return ["zain", "gf"];
+  }
+})();
+
 interface Message {
   id: string;
   sender: string;
@@ -635,7 +647,7 @@ export default function App() {
           <form onSubmit={handleLogin} className="flex flex-col gap-5">
             <div>
               <label className="text-neutral-500 text-xs uppercase tracking-wider block mb-1.5">Username</label>
-              <input type="text" placeholder="zain or gf" value={username}
+              <input type="text" placeholder={ALLOWED_USERS.join(" or ")} value={username}
                 onChange={(e) => setUsername(e.target.value.toLowerCase())}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-3 text-sm text-white outline-none focus:border-white transition" required />
             </div>
@@ -652,7 +664,13 @@ export default function App() {
             </button>
           </form>
           <p className="text-neutral-600 text-xs text-center mt-8">
-            Pre-authorized: <span className="text-neutral-400 font-mono">zain</span> & <span className="text-neutral-400 font-mono">gf</span>
+            Pre-authorized:{' '}
+            {ALLOWED_USERS.map((u, i) => (
+              <span key={u}>
+                {i > 0 && <span className="text-neutral-600 mx-1">&</span>}
+                <span className="text-neutral-400 font-mono">{u}</span>
+              </span>
+            ))}
           </p>
         </div>
       )}

@@ -215,8 +215,8 @@ function parseUsersEnv(raw: string | undefined): Array<{ username: string; passw
   }
   // Fallback defaults
   return [
-    { username: "zain", password: "together_zain_2026" },
-    { username: "gf", password: "together_gf_2026" },
+    { username: "zain", password: "zain-aqdas-6464" },
+    { username: "hadi", password: "hadia-khan-6464" },
   ];
 }
 

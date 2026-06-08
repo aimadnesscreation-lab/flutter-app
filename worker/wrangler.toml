@@ -8,7 +8,7 @@ JWT_SECRET = "super_private_together_key_secret_2026"
 
 # User credentials as JSON array
 # Format: [{"username":"...","password":"..."}]
-USERS = '[{"username":"zain","password":"together_zain_2026"},{"username":"gf","password":"together_gf_2026"}]'
+USERS = '[{"username":"zain","password":"zain-aqdas-6464"},{"username":"hadi","password":"hadia-khan-6464"}]'
 
 [[kv_namespaces]]
 binding = "TOGETHER_KV"

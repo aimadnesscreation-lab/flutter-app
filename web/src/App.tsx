@@ -25,17 +25,165 @@ interface Message {
 type Screen = "splash" | "login" | "chat" | "calling" | "settings";
 type CallState = "idle" | "ringing_in" | "ringing_out" | "connected";
 
+// LocalStorage helpers for session & message persistence
+const STORAGE_KEY = "together_session";
+const MSG_CACHE_KEY = "together_messages";
+
+function loadSession(): { token: string; username: string; partnerName: string } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data.token && data.username && data.partnerName) return data;
+    return null;
+  } catch { return null; }
+}
+
+function saveSession(token: string, username: string, partnerName: string) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, username, partnerName }));
+}
+
+function clearSession() {
+  localStorage.removeItem(STORAGE_KEY);
+}
+
+function loadCachedMessages(): Message[] {
+  try {
+    const raw = localStorage.getItem(MSG_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function cacheMessage(msg: Message) {
+  try {
+    const msgs = loadCachedMessages();
+    const exists = msgs.some((m) => m.id === msg.id);
+    if (!exists) {
+      msgs.push(msg);
+      localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(msgs));
+    }
+  } catch { /* ignore */ }
+}
+
+// Play a notification chime using Web Audio API (no external files needed)
+let audioCtx: AudioContext | null = null;
+function playNotification() {
+  if (document.visibilityState !== "hidden") return;
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(880, now);
+    gain1.gain.setValueAtTime(0.15, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    osc1.connect(gain1).connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.15);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(660, now + 0.12);
+    gain2.gain.setValueAtTime(0.12, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+    osc2.connect(gain2).connect(ctx.destination);
+    osc2.start(now + 0.12);
+    osc2.stop(now + 0.3);
+  } catch (e) {
+    console.warn("Notification sound failed:", e);
+  }
+}
+
+// Show a browser OS notification popup
+function showBrowserNotification(partnerName: string, content: string, tag = "together-message") {
+  if (document.visibilityState !== "hidden") return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "denied") return;
+  if (Notification.permission === "granted") {
+    new Notification("Together", {
+      body: `${partnerName}: ${content}`,
+      icon: "/favicon.ico",
+      tag,
+    });
+  }
+}
+
+// Ringtone using Web Audio API (repeating ring pattern)
+let ringtoneTimer: ReturnType<typeof setTimeout> | null = null;
+function playRingtone() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+
+    const ring = () => {
+      const now = ctx.currentTime;
+      // First ring burst: 440Hz for 0.5s
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(440, now);
+      gain1.gain.setValueAtTime(0.2, now);
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+      osc1.connect(gain1).connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.5);
+
+      // Second ring burst: 440Hz for 0.5s after a 0.2s pause
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(440, now + 0.7);
+      gain2.gain.setValueAtTime(0.2, now + 0.7);
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+      osc2.connect(gain2).connect(ctx.destination);
+      osc2.start(now + 0.7);
+      osc2.stop(now + 1.2);
+    };
+
+    ring();
+    // Repeat every 2 seconds (ring pattern + pause)
+    ringtoneTimer = setInterval(ring, 2000);
+  } catch (e) {
+    console.warn("Ringtone failed:", e);
+  }
+}
+
+function stopRingtone() {
+  if (ringtoneTimer !== null) {
+    clearInterval(ringtoneTimer);
+    ringtoneTimer = null;
+  }
+}
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("splash");
-  const [username, setUsername] = useState("");
-  const [token, setToken] = useState("");
-  const [partnerName, setPartnerName] = useState("");
+  // Restore session & messages from localStorage on mount
+  const savedSession = useRef(loadSession());
+  const cachedMessages = savedSession.current ? loadCachedMessages() : [];
+
+  const initialScreen = savedSession.current ? "chat" : "splash";
+  const initialUsername = savedSession.current?.username || "";
+  const initialToken = savedSession.current?.token || "";
+  const initialPartnerName = savedSession.current?.partnerName || "";
+
+  const [screen, setScreen] = useState<Screen>(initialScreen);
+  const [username, setUsername] = useState(initialUsername);
+  const [token, setToken] = useState(initialToken);
+  const [partnerName, setPartnerName] = useState(initialPartnerName);
+  const [messages, setMessages] = useState<Message[]>(cachedMessages);
+
+  // Message ID set for dedup across server fetch + WS
+  const seenIdsRef = useRef(new Set(cachedMessages.map((m) => m.id)));
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Chat state
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Chat state (initialized from localStorage cache above)
   const [inputText, setInputText] = useState("");
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const [isPartnerOnline, setIsPartnerOnline] = useState(false);
@@ -150,7 +298,7 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // --- Fetch messages ---
+  // --- Fetch messages from server (merges with local cache) ---
   const fetchMessages = useCallback(async () => {
     if (!token) return;
     try {
@@ -158,8 +306,22 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (data.success) setMessages(data.messages);
-    } catch { /* offline fallback */ }
+      if (data.success && Array.isArray(data.messages)) {
+        setMessages((prev) => {
+          const merged = [...prev];
+          let changed = false;
+          for (const msg of data.messages) {
+            if (!seenIdsRef.current.has(msg.id)) {
+              seenIdsRef.current.add(msg.id);
+              cacheMessage(msg);
+              merged.push(msg);
+              changed = true;
+            }
+          }
+          return changed ? merged.sort((a, b) => a.timestamp - b.timestamp) : prev;
+        });
+      }
+    } catch (e) { console.warn("fetchMessages failed:", e); }
   }, [token]);
 
   // Keep ref up to date for WS closure to avoid stale closures
@@ -195,9 +357,13 @@ export default function App() {
             if (data.sender === currentPartner) setIsPartnerTyping(data.isTyping);
             break;
           case "message":
+            playNotification();
+            showBrowserNotification(currentPartner, data.content);
             setMessages((prev) => {
-              const exists = prev.some((m) => m.id === data.id);
-              return exists ? prev : [...prev, data];
+              if (seenIdsRef.current.has(data.id)) return prev;
+              seenIdsRef.current.add(data.id);
+              cacheMessage(data);
+              return [...prev, data];
             });
             break;
           case "signal":
@@ -209,6 +375,11 @@ export default function App() {
               setIncomingCallPayload(payload);
               setCallState("ringing_in");
               setScreen("calling");
+              showBrowserNotification(
+                currentPartner,
+                `${payload.isAudioOnly ? "Audio" : "Video"} call...`,
+                "together-call"
+              );
             } else if (data.signalType === "answer" && pcRef.current) {
               try {
                 await pcRef.current.setRemoteDescription(
@@ -233,6 +404,8 @@ export default function App() {
             break;
           case "clearChat":
             setMessages([]);
+            localStorage.removeItem(MSG_CACHE_KEY);
+            seenIdsRef.current = new Set();
             break;
         }
       } catch (e) {
@@ -263,10 +436,15 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
+        saveSession(data.token, data.username, data.partnerName);
         setToken(data.token);
         setUsername(data.username);
         setPartnerName(data.partnerName);
         setScreen("chat");
+        // Request notification permission after successful login (user gesture)
+        if ("Notification" in window && Notification.permission === "default") {
+          Notification.requestPermission().catch(() => {});
+        }
       } else setLoginError(data.error || "Login failed");
     } catch {
       setLoginError("Network error. Check backend status.");
@@ -282,8 +460,12 @@ export default function App() {
       timestamp: Date.now(),
       status: "sending",
     };
+    seenIdsRef.current.add(msg.id);
+    cacheMessage(msg);
     setMessages((prev) => [...prev, msg]);
     setInputText("");
+
+    // Send via WebSocket — the DO now persists to KV automatically
     socketRef.current.send(JSON.stringify({ type: "message", id: msg.id, content: msg.content }));
   };
 
@@ -367,10 +549,21 @@ export default function App() {
     }
   };
 
+  // Ringtone: play when ringing, stop when answered or ended
+  useEffect(() => {
+    if (callState === "ringing_in" || callState === "ringing_out") {
+      playRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [callState]);
+
   // Call timeout: auto-cancel ringing_out after 30s
   useEffect(() => {
     if (callState !== "ringing_out") return;
     const t = setTimeout(() => {
+      stopRingtone();
       socketRef.current?.send(JSON.stringify({ type: "signal", signalType: "end", payload: {} }));
       cleanupMedia();
       setCallState("idle");
@@ -408,19 +601,23 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessages([]);
+      localStorage.removeItem(MSG_CACHE_KEY);
+      seenIdsRef.current = new Set();
     } catch {}
   };
 
   const handleLogout = () => {
+    clearSession();
     cleanupMedia();
     socketRef.current?.close();
     setToken(""); setUsername(""); setPartnerName(""); setMessages([]);
+    localStorage.removeItem(MSG_CACHE_KEY);
     setScreen("login");
   };
 
   // --- Render ---
   return (
-    <div className="min-h-dvh bg-black text-white flex flex-col font-sans">
+    <div className="h-dvh bg-black text-white flex flex-col font-sans overflow-hidden">
       {screen === "splash" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <div className="w-20 h-20 border-2 border-white rounded-2xl flex items-center justify-center animate-pulse">
@@ -461,7 +658,7 @@ export default function App() {
       )}
 
       {screen === "chat" && (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 grid grid-rows-[auto_1fr_auto] overflow-hidden">
           <header className="flex items-center justify-between px-4 py-3 border-b border-neutral-900 bg-black/80 backdrop-blur">
             <div className="flex items-center gap-3">
               <button onClick={() => setScreen("settings")} className="p-1.5 hover:bg-neutral-900 rounded-lg transition cursor-pointer">
@@ -485,7 +682,7 @@ export default function App() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+          <div className="overflow-y-auto px-4 py-4 flex flex-col gap-2 min-h-0">
             {messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
                 <MessageCircle className="w-8 h-8 text-neutral-800" />
@@ -512,13 +709,13 @@ export default function App() {
             <div ref={chatEndRef} />
           </div>
 
-          {isPartnerTyping && (
-            <div className="px-4 pb-1">
-              <span className="text-[11px] text-neutral-500 animate-pulse">{partnerName} is typing...</span>
-            </div>
-          )}
-
-          <div className="p-3 border-t border-neutral-900 flex items-center gap-2">
+          <div>
+            {isPartnerTyping && (
+              <div className="px-4 pt-2 pb-1">
+                <span className="text-[11px] text-neutral-500 animate-pulse">{partnerName} is typing...</span>
+              </div>
+            )}
+            <div className="p-3 border-t border-neutral-900 flex items-center gap-2">
             <input type="text" value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onFocus={() => sendTyping(true)} onBlur={() => sendTyping(false)}
@@ -530,6 +727,7 @@ export default function App() {
             </button>
           </div>
         </div>
+      </div>
       )}
 
       {screen === "calling" && (

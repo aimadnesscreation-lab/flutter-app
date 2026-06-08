@@ -60,18 +60,24 @@ export class TogetherSessionManager {
 
         // Standardize event types: message, typing, signal (WebRTC Offer/Answer/ICE)
         if (data.type === "message") {
+          const msgId = data.id || Math.random().toString(36).substr(2, 9);
+          const messageObj = {
+            type: "message",
+            id: msgId,
+            sender: username,
+            content: data.content,
+            timestamp: Date.now(),
+            status: "delivered",
+          };
+
+          // Persist to KV so messages survive page refresh
+          this.env.TOGETHER_KV.put(
+            `messages:${messageObj.timestamp}:${msgId}`,
+            JSON.stringify(messageObj)
+          ).catch((e: any) => console.error("KV put failed:", e));
+
           // Broadcast to everyone else
-          this.broadcast(
-            {
-              type: "message",
-              id: data.id || Math.random().toString(36).substr(2, 9),
-              sender: username,
-              content: data.content,
-              timestamp: Date.now(),
-              status: "delivered",
-            },
-            id
-          );
+          this.broadcast(messageObj, id);
         } else if (data.type === "typing") {
           this.broadcast(
             {

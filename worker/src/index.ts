@@ -103,7 +103,7 @@ export default {
         }
 
         // Forward to Durable Object matching a single static workspace namespace ID (since there is only 1 room)
-        const id = env.TOGETHER_SESSION.idFromName("together_private_room");
+        const id = env.TOGETHER_SESSION.idFromName("together_room_v2");
         const doStub = env.TOGETHER_SESSION.get(id);
 
         // Forward the fetch containing WS upgrade
@@ -140,7 +140,7 @@ export default {
         );
 
         // Also trigger real-time sync inside Durable Object if it's running
-        const doId = env.TOGETHER_SESSION.idFromName("together_private_room");
+        const doId = env.TOGETHER_SESSION.idFromName("together_room_v2");
         const doStub = env.TOGETHER_SESSION.get(doId);
         await doStub.fetch(
           new Request(`http://do/internal-msg`, {

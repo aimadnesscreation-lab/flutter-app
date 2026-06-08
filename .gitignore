@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# APK binary (built via CI)
+*.apk

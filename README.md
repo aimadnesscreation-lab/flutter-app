@@ -1,113 +1,269 @@
-# Together - Private One-to-One Messenger
+# Together — A Private Messenger for Two
 
-Together is a minimalist, fast, lightweight, and modern messaging app developed specifically for private communication between **exactly two pre-authorized partners** (`zain` and `gf`). 
+Together is a fully private messaging and WebRTC calling app designed for exactly two people. It supports real-time text messaging, typing indicators, online presence, and audio/video calls — all routed through a serverless Cloudflare backend.
 
-This workspace hosts a **fully integrated Flutter Frontend, Cloudflare Serverless Worker Backend, and an interactive side-by-side Web Simulator**.
+## Project Structure
 
-## 🛠 Project Components
-1. **Frontend Flutter App** (`/lib/`, `pubspec.yaml`): Standalone Material 3 Android/iOS mobile application with real-time WebSockets and peer-to-peer WebRTC audio/video call management.
-2. **Backend Cloudflare Worker** (`/worker/`): Ultra-fast serverless API endpoints, secure JSON Web Token authentication, KV for historic messages, and Durable Objects to coordinate instant signaling.
-3. **Interactive Device Simulator** (Visual Iframe Preview): Dual viewport smartphone mockup sandbox in your browser window to simulate Zain and GF typing, chatting, and calling in real-time.
-
----
-
-## 📱 Phase 1: Architecture Mapping & Directory Layout
-```text
-Together/
-├── lib/                             # FLUTTER FRONTEND APPLICATION
-│   ├── models/
-│   │   ├── message.dart             # Message schema
-│   │   └── user.dart                # Partner presence state modeling
-│   ├── services/
-│   │   ├── websocket_service.dart   # Instant WebSocket handlers
-│   │   └── webrtc_service.dart      # Standard signaling & WebRTC Peer connection
-│   ├── screens/
-│   │   ├── splash_screen.dart       # Minimalist black loading logo
-│   │   ├── login_screen.dart        # Authorization (zain / gf ONLY)
-│   │   ├── home_screen.dart         # Direct chat & typing awareness page
-│   │   ├── call_screen.dart         # PIP user video & controls layout
-│   │   └── settings_screen.dart     # Clear databases & logouts
-│   ├── utils/
-│   │   └── constants.dart           # App credentials & URL settings
-│   └── main.dart                    # Application bootstrap and global providers
-│
-├── worker/                          # CLOUDFLARE SERVERLESS BACKEND
+```
+├── web/                    # Web app (React + Vite + Tailwind)
 │   ├── src/
-│   │   ├── index.ts                 # REST controllers, login & JWT actions
-│   │   └── durable-object.ts        # TogetherSessionManager WS coordinates
-│   ├── package.json                 # Worker dependency package
-│   └── wrangler.toml                # Durable Object & KV configuration bindings
+│   │   ├── App.tsx         # Main app with chat, calling, settings screens
+│   │   ├── main.tsx        # Entry point
+│   │   └── index.css       # Tailwind imports
+│   ├── vite.config.ts
+│   └── package.json
 │
-└── README.md                        # Documentation and command index
+├── worker/                 # Cloudflare Worker backend
+│   ├── src/
+│   │   ├── index.ts        # HTTP API + WebSocket routing
+│   │   └── durable-object.ts  # Durable Object for real-time signaling
+│   ├── wrangler.toml       # Worker configuration
+│   └── package.json
+│
+├── lib/                    # Flutter mobile app (Android/iOS)
+│   ├── main.dart
+│   ├── screens/            # UI screens (login, chat, calling, settings)
+│   ├── services/           # WebSocket & WebRTC services
+│   ├── models/             # Data models
+│   └── utils/
+│       └── constants.dart  # API URLs, user config
+│
+├── pubspec.yaml            # Flutter dependencies
+├── server.ts               # Local Express dev server (simulator)
+└── package.json            # Local dev server dependencies
 ```
 
----
+## Features
 
-## ☁️ Phase 2 & 5: Cloudflare Worker Backend Implementation & Deployments
+- **Text messaging** — Real-time delivery via WebSocket
+- **Typing indicators** — See when the other person is typing
+- **Online presence** — Know when your partner is connected
+- **Audio/Video calls** — WebRTC peer-to-peer with STUN
+- **Message persistence** — Messages survive page refresh (KV storage + localStorage cache)
+- **Session persistence** — Stay logged in across page refreshes
+- **Notifications** — Sound + OS popup when messages arrive in the background
+- **Call ringtone** — Phone-style ring for incoming calls
+- **Mirrored video** — Both sides see mirrored self-view
 
-Cloudflare Workers provides instant serverless endpoints on the Free Tier with Durable Objects for fast state tracking.
+## How to Use
 
-### Local Mock Terminal Execution
-To test modifications or configure the worker on your terminal:
+### Web App (Deployed)
+
+1. Open the web app URL
+2. Login with one of the pre-configured accounts
+3. Open a second browser tab and login with the other account
+4. Start chatting or place a call
+
+**Default credentials:**
+
+| Username | Password |
+|----------|----------|
+| `zain`   | `together_zain_2026` |
+| `gf`     | `together_gf_2026`   |
+
+### Flutter Mobile App (APK)
+
+The Flutter APK is built separately and connects to the same Cloudflare backend.
+
+1. Build the APK:
+   ```bash
+   flutter build apk --release
+   ```
+2. Install the APK on both Android devices
+3. Login with the same credentials
+
+## Changing Usernames & Passwords
+
+There are **three places** where usernames and passwords are defined. You must update all of them:
+
+### 1. Cloudflare Worker (`worker/src/index.ts`)
+
+This is the live production backend that handles authentication. Find the `USERS` object:
+
+```typescript
+// Lines ~38-41
+const USERS: Record<string, string> = {
+  zain: "together_zain_2026",   // ← Change username and/or password
+  gf: "together_gf_2026",       // ← Change username and/or password
+};
+```
+
+Change the keys (usernames) and/or values (passwords). Then redeploy:
+
 ```bash
-# Move to worker container
 cd worker
-
-# Install dependencies
-npm install
-
-# Deploy instant dev playground matching DO configurations
-npx wrangler dev
-```
-
-### Direct Live Cloudflare Deployment
-When you are ready to publish live to your production Cloudflare Dashboard:
-```bash
-# Connect and authenticate wrangler credentials
-npx wrangler login
-
-# Deploy standard triggers, KV spaces, and Durable Objects configurations to the edge
 npx wrangler deploy
 ```
 
-*Note: Update `lib/utils/constants.dart` with your newly deployed worker URL after this step!*
+Also update the `JWT_SECRET` in `worker/wrangler.toml` for production security:
 
----
+```toml
+[vars]
+JWT_SECRET = "your_new_secret_key_here"
+```
 
-## 🎯 Phase 3 & 4: Flutter WebRTC Frontend Integration
+### 2. Durable Object (`worker/src/durable-object.ts`)
 
-The Flutter app leverages `flutter_webrtc` to bind direct socket signals into functional, safe cross-platform channels.
+The DO validates usernames on WebSocket connection. Find the username check:
 
-### Setup & Run Commands:
+```typescript
+// Lines ~28-30
+if (!username || (username !== "zain" && username !== "gf")) {
+  return new Response("Invalid partner username", { status: 400 });
+}
+```
+
+Update the hardcoded usernames to match the new ones from step 1, then redeploy.
+
+The partner determination logic also references these names:
+
+```typescript
+const partner = username === "zain" ? "gf" : "zain";
+```
+
+Update this as well.
+
+### 3. Flutter App (`lib/utils/constants.dart`)
+
+The mobile app has its own copy of the allowed users list:
+
+```dart
+static const List<String> allowedUsers = ["zain", "gf"];
+```
+
+Update the usernames here and rebuild the APK:
+
 ```bash
-# Pull dependencies and establish package links
-flutter pub get
-
-# Find connected physical Android hardware or active simulators
-flutter devices
-
-# Run on watch mode in your IDE/console
-flutter run
-
-# Build a production-grade release APK
 flutter build apk --release
+```
+
+### 4. Local Express Server (`server.ts`)
+
+If you're running the local dev server, update the `VALID_USERS` object:
+
+```typescript
+const VALID_USERS: Record<string, string> = {
+  zain: "together_zain_2026",
+  gf: "together_gf_2026"
+};
 ```
 
 ---
 
-## 🔍 Phase 6: System Testing & Sandbox Verifications
+### After Changing Credentials
 
-Because testing a 1-to-1 app requires two devices, we designed the **Interactive Dual-Device Visual Simulator** in the workspace!
-1. Log in to the left mock device viewport with user `zain` and password `together_zain_2026`.
-2. Log in to the right mock device viewport with user `gf` and password `together_gf_2526`.
-3. Try typing a message in Zain's input; you will see the active `gf is typing...` indicator animate on GF's viewport instantly!
-4. Click the Audio or Video Calling icon in Zain's screen to ring GF's phone with live call controls.
+All existing JWT tokens will become invalid (they were signed with the old secret). Users will need to log in again with the new credentials.
 
----
+## Architecture
 
-## 🛡️ Phase 7: Production Hardening Guidelines
+```
+┌──────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│   Flutter App     │────▶│  Cloudflare Worker   │────▶│  KV Storage     │
+│  (Android/iOS)    │◀────│  (API + WebSocket)   │◀────│  (Messages)     │
+└──────────────────┘     │                      │     └─────────────────┘
+                         │  Durable Object      │
+┌──────────────────┐     │  (Real-time +        │
+│   Web App         │────▶│   WebRTC signaling)  │
+│  (React + Vite)  │◀────│                      │
+└──────────────────┘     └──────────────────────┘
 
-To ensure maximum security and performance:
-1. **Dynamic Secret Rotation**: Update the default `JWT_SECRET` in `worker/wrangler.toml` before going production.
-2. **STUN/TURN Servers**: While our code sets up public Google STUN servers (`stun.l.google.com`), production setups with strict firewall users should incorporate a TURN profile (such as Xirsys or Metered.ca) in `lib/services/webrtc_service.dart`.
-3. **Password Customization**: Replace the default passwords in `worker/src/index.ts` with custom shared phrases known only to you and your partner.
+WebRTC media flows peer-to-peer (not through the server).
+```
+
+### Components
+
+#### Cloudflare Worker (Backend)
+- **`src/index.ts`** — REST API for login, message CRUD, and WebSocket upgrade routing
+- **`src/durable-object.ts`** — Durable Object managing real-time connections, broadcasting, WebRTC signaling, and KV persistence
+
+#### Web App (React + Vite + Tailwind)
+- Single-page app with splash, login, chat, calling, and settings screens
+- Connects to the Cloudflare Worker via WebSocket and REST API
+- Uses the Web Audio API for notification sounds and ringtone (no audio files needed)
+- Uses the Notification API for OS-level popups
+- Messages cached in localStorage for instant display on refresh
+
+#### Flutter App (Mobile)
+- Full native Android/iOS app with the same functionality
+- Uses `flutter_webrtc` for WebRTC calling
+- Connects to the same Cloudflare Worker backend
+
+## Deployment
+
+### Prerequisites
+
+- **Node.js 18+** and npm
+- **Cloudflare account** with Workers and KV
+- **Wrangler CLI** (`npm install -g wrangler`)
+- **Flutter SDK** (for mobile builds)
+
+### Quick Deploy
+
+```bash
+# 1. Deploy the Cloudflare Worker backend
+cd worker
+npx wrangler deploy
+
+# 2. Deploy the web app to Cloudflare Pages
+cd ../web
+npm install
+npm run build
+npx wrangler pages deploy dist/ --project-name together-web --branch main
+
+# 3. (Optional) Build the Flutter APK
+cd ..
+flutter build apk --release
+```
+
+### Environment Configuration
+
+Create a `.env` file in the root (see `.env.example`):
+
+```
+JWT_SECRET=your_secret_key
+```
+
+## Local Development
+
+```bash
+# Start the Express dev server (with Vite HMR for the web app)
+npm install
+npm run dev
+# Opens at http://localhost:3000
+
+# Or run the web app standalone with hot reload
+cd web
+npm install
+npm run dev
+
+# Run the Cloudflare Worker locally
+cd worker
+npm install
+npx wrangler dev
+```
+
+## API Endpoints
+
+| Method | Path                | Description               |
+|--------|---------------------|---------------------------|
+| POST   | `/api/login`        | Authenticate user         |
+| GET    | `/api/messages`     | Fetch message history     |
+| POST   | `/api/send-message` | Send and persist message  |
+| DELETE | `/api/messages/clear` | Clear all messages      |
+| WS     | `/ws`               | WebSocket for real-time   |
+
+## WebSocket Message Types
+
+| Type       | Direction     | Description                     |
+|------------|---------------|---------------------------------|
+| `message`  | Both          | Text message                    |
+| `typing`   | Both          | Typing indicator                |
+| `signal`   | Both          | WebRTC signaling (offer/answer/candidate) |
+| `status`   | Server→Client | Online/offline presence         |
+| `init`     | Server→Client | Initial state on connect        |
+| `clearChat`| Both          | Clear chat history              |
+| `heartbeat`| Client→Server | Keep-alive ping                 |
+
+## License
+
+Private — for personal use between two partners.
